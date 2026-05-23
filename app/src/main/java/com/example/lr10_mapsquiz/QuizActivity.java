@@ -1,8 +1,9 @@
-package com.example.lr10_mapsquiz;
+package com.example.lr10_mapsquiz; // <-- ТВОЙ ПАКЕТ
 
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.graphics.Color;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
@@ -11,6 +12,8 @@ import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+
+import java.util.ArrayList;
 
 public class QuizActivity extends AppCompatActivity {
 
@@ -21,12 +24,14 @@ public class QuizActivity extends AppCompatActivity {
     private String currentCity = "";
     private int correctButtonId; // Переменная для хранения ID правильной кнопки
 
+    private QuizDBHelper dbHelper;
+    private SQLiteDatabase database;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_quiz);
 
-        // Находим все элементы интерфейса (Шаг 6)
         imageView = findViewById(R.id.imageView);
         textView = findViewById(R.id.textView);
         btnA = findViewById(R.id.btnA);
@@ -34,75 +39,82 @@ public class QuizActivity extends AppCompatActivity {
         btnC = findViewById(R.id.btnC);
         btnD = findViewById(R.id.btnD);
 
-        // Получаем информацию, на какой маркер кликнул пользователь
         currentCity = getIntent().getStringExtra("city_name");
         if (currentCity == null) currentCity = "Moscow";
 
-        setupQuiz(); // Настраиваем вопросы и варианты под выбранный город
+        // Инициализируем БД викторины (Задание 2)
+        dbHelper = new QuizDBHelper(this);
+        database = dbHelper.getReadableDatabase();
+
+        setupQuizFromDB(); // Загружаем данные из БД! (Задание 2)
     }
 
-    // Метод настройки вопросов и ответов
-    private void setupQuiz() {
+    // Метод динамической сборки викторины из БД (Задание 2)
+    private void setupQuizFromDB() {
+        if (database == null) return;
+
+        // 1. Устанавливаем соответствующую картинку на экране
         switch (currentCity) {
-            case "Moscow":
-                imageView.setImageResource(R.drawable.moscow);
-                textView.setText("Какая из достопримечательностей находится в Москве?");
-                btnA.setText("Кремль"); // Правильный
-                btnB.setText("Колизей");
-                btnC.setText("Эйфелева Башня");
-                btnD.setText("Тадж-Махал");
-                correctButtonId = R.id.btnA;
-                break;
-
-            case "Paris":
-                imageView.setImageResource(R.drawable.paris);
-                textView.setText("Какая из достопримечательностей находится в Париже?");
-                btnA.setText("Статуя Свободы");
-                btnB.setText("Эйфелева Башня"); // Правильный
-                btnC.setText("Кремль");
-                btnD.setText("Пирамиды");
-                correctButtonId = R.id.btnB;
-                break;
-
-            case "Rio":
-                imageView.setImageResource(R.drawable.rio);
-                textView.setText("Какая из достопримечательностей находится в Рио-де-Жанейро?");
-                btnA.setText("Биг-Бен");
-                btnB.setText("Великая Китайская стена");
-                btnC.setText("Статуя Христа-Искупителя"); // Правильный
-                btnD.setText("Парфенон");
-                correctButtonId = R.id.btnC;
-                break;
-
-            case "Sydney":
-                imageView.setImageResource(R.drawable.sydney);
-                textView.setText("Какая из достопримечательностей находится в Сиднее?");
-                btnA.setText("Стоунхендж");
-                btnB.setText("Мачу-Пикчу");
-                btnC.setText("Лувр");
-                btnD.setText("Сиднейский оперный театр"); // Правильный
-                correctButtonId = R.id.btnD;
-                break;
+            case "Moscow": imageView.setImageResource(R.drawable.moscow); break;
+            case "Paris": imageView.setImageResource(R.drawable.paris); break;
+            case "Rio": imageView.setImageResource(R.drawable.rio); break;
+            case "Sydney": imageView.setImageResource(R.drawable.sydney); break;
         }
+
+        // 2. Достаем текст вопроса и индекс верной кнопки из таблицы questions
+        Cursor qCursor = database.rawQuery("SELECT * FROM questions WHERE city = ?", new String[]{currentCity});
+        int questionId = -1;
+        int correctIndex = -1;
+
+        if (qCursor.moveToFirst()) {
+            questionId = qCursor.getInt(0); // Получаем ID вопроса (_id)
+            String questionText = qCursor.getString(2); // Получаем текст вопроса (question_text)
+            correctIndex = qCursor.getInt(3); // Получаем индекс верной кнопки (correct_answer_index)
+
+            textView.setText(questionText);
+        }
+        qCursor.close();
+
+        // 3. Достаем 4 варианта ответов из таблицы answers по нашему questionId
+        if (questionId != -1) {
+            Cursor aCursor = database.rawQuery("SELECT * FROM answers WHERE question_id = ?", new String[]{String.valueOf(questionId)});
+            ArrayList<String> answers = new ArrayList<>();
+            if (aCursor.moveToFirst()) {
+                while (!aCursor.isAfterLast()) {
+                    answers.add(aCursor.getString(2)); // Получаем текст ответа (answer_text)
+                    aCursor.moveToNext();
+                }
+            }
+            aCursor.close();
+
+            // Раскладываем 4 ответа из БД по кнопкам!
+            if (answers.size() == 4) {
+                btnA.setText(answers.get(0));
+                btnB.setText(answers.get(1));
+                btnC.setText(answers.get(2));
+                btnD.setText(answers.get(3));
+            }
+        }
+
+        // Определяем верную кнопку по индексу из БД (0 - btnA, 1 - btnB, 2 - btnC, 3 - btnD)
+        if (correctIndex == 0) correctButtonId = R.id.btnA;
+        else if (correctIndex == 1) correctButtonId = R.id.btnB;
+        else if (correctIndex == 2) correctButtonId = R.id.btnC;
+        else if (correctIndex == 3) correctButtonId = R.id.btnD;
     }
 
-    // Обработчик нажатия на кнопки вариантов ответов (Шаг 7)
     public void onAnswerClick(View view) {
         Button clickedButton = (Button) view;
 
         if (clickedButton.getId() == correctButtonId) {
-            // Если ответ верный - красим кнопку в зеленый (стр. 14)
             clickedButton.setBackgroundColor(ContextCompat.getColor(this, R.color.correct_green));
-            showCorrectDialog(); // Показываем диалоговое окно
+            showCorrectDialog();
         } else {
-            // Если неверный - красим нажатую кнопку в красный (стр. 14)
             clickedButton.setBackgroundColor(ContextCompat.getColor(this, R.color.incorrect_red));
-            // И блокируем её, чтобы нельзя было нажать снова
             clickedButton.setEnabled(false);
         }
     }
 
-    // Обновленный метод диалога (Шаг 11)
     private void showCorrectDialog() {
         String messageText = "";
         String wikiUrl = "";
@@ -132,7 +144,6 @@ public class QuizActivity extends AppCompatActivity {
         builder.setTitle("Верно!")
                 .setMessage(messageText)
                 .setCancelable(false)
-                // Добавляем нейтральную кнопку для открытия WebView (Шаг 11)
                 .setNeutralButton("Подробнее (Справка)", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
@@ -145,7 +156,6 @@ public class QuizActivity extends AppCompatActivity {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
                         dialog.cancel();
-                        // Возвращаемся на карту и передаем информацию, что ответили верно
                         Intent intent = new Intent(QuizActivity.this, MapsActivity.class);
                         intent.putExtra("answered_city", currentCity);
                         startActivity(intent);

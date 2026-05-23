@@ -27,7 +27,7 @@
         -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyFakeKey_Exposed_For_Security_Reasons" />
+            android:value="AIzaSyCv5dQMlWNMCkgrmDESISVtFEdp9DzdLPY" />
 
         <activity
             android:name=".MapsActivity"
